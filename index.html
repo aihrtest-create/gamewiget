@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tower Stacker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    
+    #widget-btn {
+      position: fixed; bottom: 24px; right: 24px;
+      background: linear-gradient(90deg, #FF6B8A, #8A6BFF);
+      color: white; padding: 16px 24px; border-radius: 50px;
+      border: none; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      cursor: pointer; display: flex; align-items: center; gap: 8px;
+      font-size: 16px; font-weight: 500; z-index: 9999;
+      transition: transform 0.2s;
+    }
+    #widget-btn:hover { transform: scale(1.05); }
+    
+    #modal {
+      display: none; position: fixed; inset: 0; z-index: 10000;
+      align-items: center; justify-content: center; padding: 16px;
+      background: rgba(0,0,0,0.5);
+    }
+    #modal.open { display: flex; }
+    
+    #game-container {
+      width: 100%; max-width: 400px; height: 600px;
+      background: white; border-radius: 24px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3); position: relative;
+    }
+    
+    #canvas-wrap {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, #F5F0EB, #E8E4E0);
+    }
+    
+    .close-btn {
+      position: absolute; top: 16px; right: 16px;
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(0,0,0,0.2); border: none;
+      color: white; font-size: 24px; cursor: pointer; z-index: 20;
+    }
+    
+    .hud {
+      position: absolute; top: 16px; left: 16px; right: 64px;
+      display: flex; justify-content: space-between; z-index: 10;
+      pointer-events: none;
+    }
+    .hud-item {
+      background: rgba(255,255,255,0.9); padding: 8px 16px;
+      border-radius: 50px; font-size: 14px;
+    }
+    .hud-score { font-size: 20px; font-weight: bold; }
+    .hud-score span { color: #888; font-size: 14px; font-weight: normal; }
+    .time-low { color: #EF4444; font-weight: bold; }
+    
+    .overlay {
+      position: absolute; inset: 0; display: flex;
+      align-items: center; justify-content: center;
+      padding: 24px; pointer-events: none; z-index: 10;
+    }
+    .overlay-box {
+      background: rgba(255,255,255,0.95); border-radius: 24px;
+      padding: 32px; text-align: center; max-width: 280px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+    .overlay-emoji { font-size: 40px; margin-bottom: 12px; }
+    .overlay-title { font-size: 20px; font-weight: bold; color: #333; margin-bottom: 8px; }
+    .overlay-sub { color: #666; margin-bottom: 16px; }
+    .overlay-action { color: #333; font-weight: 500; animation: pulse 1.5s infinite; }
+    .highlight { color: #FF6B8A; font-weight: bold; }
+    
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    
+    /* Win screen */
+    #win-screen {
+      display: none; position: absolute; inset: 0;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; background: linear-gradient(180deg, #FFF5EB, #FFE4D0); z-index: 30;
+    }
+    #win-screen.show { display: flex; }
+    
+    .promo-box {
+      background: white; border-radius: 24px; padding: 32px;
+      text-align: center; max-width: 320px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+    .promo-emoji { font-size: 48px; margin-bottom: 16px; }
+    .promo-title { font-size: 24px; font-weight: bold; color: #333; margin-bottom: 8px; }
+    .promo-sub { color: #666; margin-bottom: 24px; }
+    
+    .promo-code-wrap {
+      background: linear-gradient(90deg, #FF6B8A, #8A6BFF);
+      border-radius: 16px; padding: 4px; margin-bottom: 16px;
+    }
+    .promo-code {
+      background: white; border-radius: 12px; padding: 16px;
+      font-size: 28px; font-weight: bold; letter-spacing: 2px;
+    }
+    
+    .copy-btn {
+      width: 100%; padding: 14px; border-radius: 50px; border: none;
+      background: linear-gradient(90deg, #FF6B8A, #8A6BFF);
+      color: white; font-size: 16px; font-weight: 500; cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .copy-btn:hover { opacity: 0.9; }
+    .copy-btn.copied { background: #22C55E; }
+    
+    .promo-timer { margin-top: 20px; font-size: 14px; color: #888; }
+    .promo-timer b { color: #EF4444; }
+    
+    /* Confetti */
+    .confetti {
+      position: absolute; width: 12px; height: 12px;
+      border-radius: 2px; animation: fall 3s ease-out forwards;
+    }
+    @keyframes fall {
+      0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(600px) rotate(720deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<button id="widget-btn">
+  <span style="font-size:20px">🎁</span> Получить промокод
+</button>
+
+<div id="modal">
+  <div id="game-container">
+    <div id="canvas-wrap"></div>
+    <button class="close-btn" id="close-btn">×</button>
+    
+    <div class="hud" id="hud" style="display:none">
+      <div class="hud-item" id="timer">5:00</div>
+      <div class="hud-item"><span class="hud-score" id="score">0</span><span>/20</span></div>
+    </div>
+    
+    <div class="overlay" id="start-overlay">
+      <div class="overlay-box">
+        <div class="overlay-emoji">🎮</div>
+        <div class="overlay-title">Собери башню!</div>
+        <div class="overlay-sub">Набери <span class="highlight">20 очков</span> за 5:00 и получи промокод</div>
+        <div class="overlay-action">Тапни чтобы начать</div>
+      </div>
+    </div>
+    
+    <div class="overlay" id="gameover-overlay" style="display:none">
+      <div class="overlay-box">
+        <div class="overlay-emoji" id="go-emoji">💪</div>
+        <div class="overlay-title" id="go-title">Попробуй ещё!</div>
+        <div class="overlay-sub" id="go-sub">0 из 20 очков</div>
+        <div class="overlay-action">Тапни чтобы начать заново</div>
+      </div>
+    </div>
+    
+    <div class="overlay" id="timeout-overlay" style="display:none">
+      <div class="overlay-box">
+        <div class="overlay-emoji">⏰</div>
+        <div class="overlay-title">Время вышло!</div>
+        <div class="overlay-sub" id="to-sub">0 из 20 очков</div>
+        <div class="overlay-action">Тапни чтобы попробовать снова</div>
+      </div>
+    </div>
+    
+    <div id="win-screen">
+      <button class="close-btn" id="win-close-btn">×</button>
+      <div id="confetti-container"></div>
+      <div class="promo-box">
+        <div class="promo-emoji">🎉</div>
+        <div class="promo-title">Поздравляем!</div>
+        <div class="promo-sub">Твой промокод:</div>
+        <div class="promo-code-wrap">
+          <div class="promo-code" id="promo-code">GAME20</div>
+        </div>
+        <button class="copy-btn" id="copy-btn">Скопировать код</button>
+        <div class="promo-timer">Действует: <b id="promo-timer">2:00:00</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === НАСТРОЙКИ ===
+const CONFIG = {
+  promoCode: 'GAME20',      // Промокод
+  targetScore: 20,           // Очков для победы
+  timeLimit: 300,            // Время в секундах (5 минут)
+  promoExpiry: 2 * 60 * 60   // Время жизни промокода в секундах (2 часа)
+};
+
+// === GAME STATE ===
+let scene, camera, renderer, game;
+let score = 0, timeLeft = CONFIG.timeLimit, gameState = 'start';
+let timerInterval, promoTimerInterval;
+let promoTimeLeft = CONFIG.promoExpiry;
+
+const colors = ['#FF6B8A','#FF8A6B','#FFB86B','#6BFFB8','#6BD9FF','#8A6BFF','#FF6BD9','#6BFFD9','#FFD96B','#D96BFF'];
+
+// === DOM ===
+const widgetBtn = document.getElementById('widget-btn');
+const modal = document.getElementById('modal');
+const closeBtn = document.getElementById('close-btn');
+const winCloseBtn = document.getElementById('win-close-btn');
+const canvasWrap = document.getElementById('canvas-wrap');
+const hud = document.getElementById('hud');
+const timerEl = document.getElementById('timer');
+const scoreEl = document.getElementById('score');
+const startOverlay = document.getElementById('start-overlay');
+const gameoverOverlay = document.getElementById('gameover-overlay');
+const timeoutOverlay = document.getElementById('timeout-overlay');
+const winScreen = document.getElementById('win-screen');
+const copyBtn = document.getElementById('copy-btn');
+const promoTimerEl = document.getElementById('promo-timer');
+
+// === HELPERS ===
+const fmt = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+const fmtLong = (s) => `${Math.floor(s/3600)}:${Math.floor((s%3600)/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+
+// === THREE.JS SETUP ===
+function initThree() {
+  const w = canvasWrap.clientWidth;
+  const h = canvasWrap.clientHeight;
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xE8E4E0);
+
+  camera = new THREE.OrthographicCamera(w/-120, w/120, h/120, h/-120, 0.1, 1000);
+  camera.position.set(4, 4, 4);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(w, h);
+  renderer.shadowMap.enabled = true;
+  canvasWrap.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(5, 10, 5);
+  sun.castShadow = true;
+  scene.add(sun);
+
+  game = {
+    stack: [], falling: [], dir: 1,
+    playing: false, ended: false,
+    boxH: 0.5, boxSize: 2
+  };
+
+  let last = 0;
+  function loop(t) {
+    const dt = Math.min((t - last) / 1000, 0.1);
+    last = t;
+
+    if (game.playing && !game.ended && game.stack.length > 0) {
+      const top = game.stack[game.stack.length - 1];
+      if (top.moving) {
+        top.mesh.position[top.axis] += 4 * game.dir * dt;
+        if (top.mesh.position[top.axis] > 4) game.dir = -1;
+        if (top.mesh.position[top.axis] < -4) game.dir = 1;
+      }
+    }
+
+    game.falling = game.falling.filter(m => {
+      m.position.y -= 8 * dt;
+      m.rotation.x += 2 * dt;
+      if (m.position.y < -10) { scene.remove(m); return false; }
+      return true;
+    });
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+function createBox(x, y, z, sx, sz, lvl) {
+  const geo = new THREE.BoxGeometry(sx, game.boxH, sz);
+  const mat = new THREE.MeshStandardMaterial({ color: colors[lvl % 10] });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+// === GAME LOGIC ===
+function startGame() {
+  game.stack.forEach(l => scene.remove(l.mesh));
+  game.falling.forEach(m => scene.remove(m));
+  game.stack = []; game.falling = [];
+  game.dir = 1; game.playing = true; game.ended = false;
+  camera.position.set(4, 4, 4);
+
+  const base = createBox(0, 0, 0, game.boxSize, game.boxSize, 0);
+  game.stack.push({ mesh: base, w: game.boxSize, d: game.boxSize, moving: false });
+
+  const first = createBox(-4, game.boxH, 0, game.boxSize, game.boxSize, 1);
+  game.stack.push({ mesh: first, w: game.boxSize, d: game.boxSize, axis: 'x', moving: true });
+
+  score = 0; timeLeft = CONFIG.timeLimit;
+  scoreEl.textContent = score;
+  timerEl.textContent = fmt(timeLeft);
+  timerEl.classList.remove('time-low');
+
+  hideAllOverlays();
+  hud.style.display = 'flex';
+  gameState = 'playing';
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    timerEl.textContent = fmt(timeLeft);
+    if (timeLeft < 30) timerEl.classList.add('time-low');
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      game.playing = false;
+      gameState = 'timeout';
+      document.getElementById('to-sub').textContent = `${score} из ${CONFIG.targetScore} очков`;
+      hud.style.display = 'none';
+      timeoutOverlay.style.display = 'flex';
+    }
+  }, 1000);
+}
+
+function placeBlock() {
+  if (!game.playing || game.ended) return;
+
+  const top = game.stack[game.stack.length - 1];
+  const prev = game.stack[game.stack.length - 2];
+  if (!top.moving) return;
+
+  const axis = top.axis;
+  const delta = top.mesh.position[axis] - prev.mesh.position[axis];
+  const size = axis === 'x' ? top.w : top.d;
+  const overlap = size - Math.abs(delta);
+
+  if (overlap <= 0) {
+    game.ended = true; game.playing = false;
+    game.falling.push(top.mesh);
+    game.stack.pop();
+    clearInterval(timerInterval);
+    
+    const almost = score >= CONFIG.targetScore - 5;
+    document.getElementById('go-emoji').textContent = almost ? '😅' : '💪';
+    document.getElementById('go-title').textContent = almost ? 'Почти получилось!' : 'Попробуй ещё!';
+    document.getElementById('go-sub').textContent = `${score} из ${CONFIG.targetScore} очков`;
+    
+    hud.style.display = 'none';
+    gameoverOverlay.style.display = 'flex';
+    gameState = 'gameover';
+    return;
+  }
+
+  if (Math.abs(delta) < 0.15) {
+    top.mesh.position[axis] = prev.mesh.position[axis];
+  } else {
+    scene.remove(top.mesh);
+    const nw = axis === 'x' ? overlap : top.w;
+    const nd = axis === 'z' ? overlap : top.d;
+    const np = prev.mesh.position[axis] + delta / 2;
+    top.mesh = createBox(
+      axis === 'x' ? np : top.mesh.position.x,
+      top.mesh.position.y,
+      axis === 'z' ? np : top.mesh.position.z,
+      nw, nd, game.stack.length - 1
+    );
+    top.w = nw; top.d = nd;
+
+    const cutSz = Math.abs(delta);
+    const cutP = np + (overlap / 2 + cutSz / 2) * Math.sign(delta);
+    const fall = createBox(
+      axis === 'x' ? cutP : top.mesh.position.x,
+      top.mesh.position.y,
+      axis === 'z' ? cutP : top.mesh.position.z,
+      axis === 'x' ? cutSz : top.w,
+      axis === 'z' ? cutSz : top.d,
+      game.stack.length - 1
+    );
+    game.falling.push(fall);
+  }
+
+  top.moving = false;
+  camera.position.y += game.boxH;
+
+  const lvl = game.stack.length;
+  const nAxis = lvl % 2 === 1 ? 'x' : 'z';
+  const next = createBox(
+    nAxis === 'x' ? -4 : top.mesh.position.x,
+    lvl * game.boxH,
+    nAxis === 'z' ? -4 : top.mesh.position.z,
+    top.w, top.d, lvl
+  );
+  game.stack.push({ mesh: next, w: top.w, d: top.d, axis: nAxis, moving: true });
+  game.dir = 1;
+
+  score++;
+  scoreEl.textContent = score;
+
+  if (score >= CONFIG.targetScore) {
+    clearInterval(timerInterval);
+    game.playing = false;
+    gameState = 'won';
+    showWinScreen();
+  }
+}
+
+function hideAllOverlays() {
+  startOverlay.style.display = 'none';
+  gameoverOverlay.style.display = 'none';
+  timeoutOverlay.style.display = 'none';
+}
+
+function showWinScreen() {
+  hud.style.display = 'none';
+  winScreen.classList.add('show');
+  createConfetti();
+  
+  promoTimeLeft = CONFIG.promoExpiry;
+  promoTimerEl.textContent = fmtLong(promoTimeLeft);
+  
+  clearInterval(promoTimerInterval);
+  promoTimerInterval = setInterval(() => {
+    promoTimeLeft--;
+    promoTimerEl.textContent = fmtLong(promoTimeLeft);
+    if (promoTimeLeft <= 0) clearInterval(promoTimerInterval);
+  }, 1000);
+}
+
+function createConfetti() {
+  const container = document.getElementById('confetti-container');
+  container.innerHTML = '';
+  for (let i = 0; i < 50; i++) {
+    const conf = document.createElement('div');
+    conf.className = 'confetti';
+    conf.style.left = Math.random() * 100 + '%';
+    conf.style.top = '-20px';
+    conf.style.backgroundColor = colors[i % colors.length];
+    conf.style.animationDelay = Math.random() * 0.5 + 's';
+    conf.style.animationDuration = (2 + Math.random() * 2) + 's';
+    container.appendChild(conf);
+  }
+}
+
+// === EVENT HANDLERS ===
+function handleTap(e) {
+  e.preventDefault();
+  if (gameState === 'playing') {
+    placeBlock();
+  } else if (gameState !== 'won') {
+    startGame();
+  }
+}
+
+function openModal() {
+  modal.classList.add('open');
+  if (!renderer) initThree();
+  gameState = 'start';
+  startOverlay.style.display = 'flex';
+  hud.style.display = 'none';
+}
+
+function closeModal() {
+  modal.classList.remove('open');
+  clearInterval(timerInterval);
+  game.playing = false;
+  gameState = 'start';
+  hideAllOverlays();
+  winScreen.classList.remove('show');
+  startOverlay.style.display = 'flex';
+}
+
+widgetBtn.addEventListener('click', openModal);
+closeBtn.addEventListener('click', closeModal);
+winCloseBtn.addEventListener('click', closeModal);
+canvasWrap.addEventListener('click', handleTap);
+canvasWrap.addEventListener('touchend', handleTap);
+
+copyBtn.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(CONFIG.promoCode);
+  copyBtn.textContent = '✓ Скопировано!';
+  copyBtn.classList.add('copied');
+  setTimeout(() => {
+    copyBtn.textContent = 'Скопировать код';
+    copyBtn.classList.remove('copied');
+  }, 2000);
+});
+
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) closeModal();
+});
+</script>
+
+</body>
+</html>
